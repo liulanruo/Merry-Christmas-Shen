@@ -1,0 +1,747 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geometric Christmas Dream - MERRY CHRISTMAS LS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400&family=Cinzel:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #020205;
+            user-select: none;
+        }
+        canvas {
+            display: block;
+        }
+
+        /* Luxury Typography Styles */
+        .luxury-text {
+            font-family: 'Cinzel', serif;
+            background: linear-gradient(
+                to bottom,
+                #fff5e6 0%,
+                #ffcc33 25%,
+                #ffb300 50%,
+                #cc8400 75%,
+                #664400 100%
+            );
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-fill-color: transparent;
+            position: relative;
+            filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.4));
+            letter-spacing: 0.3em;
+            text-transform: uppercase;
+        }
+
+        .luxury-text::after {
+            content: attr(data-text);
+            position: absolute;
+            left: 0;
+            top: 0;
+            z-index: -1;
+            background: linear-gradient(
+                45deg,
+                transparent 45%,
+                rgba(255, 255, 255, 0.8) 50%,
+                transparent 55%
+            );
+            background-size: 200% 100%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shimmer 4s infinite linear;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: -100% 0; }
+            100% { background-position: 100% 0; }
+        }
+
+        .hint-text {
+            font-family: 'Playfair Display', serif;
+            letter-spacing: 0.15em;
+            opacity: 0.7;
+            text-shadow: 0 0 5px rgba(255,255,255,0.2);
+        }
+
+        /* Blessing Card Animation */
+        .blessing-card {
+            background-color: #ffd1dc; /* Light Pink */
+            color: #000;
+            border-radius: 2rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0.8) translateY(20px); opacity: 0; }
+            100% { transform: scale(1) translateY(0); opacity: 1; }
+        }
+
+        .pink-button {
+            background-color: #ffd1dc;
+            color: #000;
+            font-family: 'Cinzel', serif;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .pink-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 15px rgba(255, 209, 220, 0.6);
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@19.0.0",
+    "react-dom": "https://esm.sh/react-dom@19.0.0",
+    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+    "three": "https://esm.sh/three@0.171.0",
+    "three/examples/jsm/": "https://esm.sh/three@0.171.0/examples/jsm/",
+    "gsap": "https://esm.sh/gsap@3.12.5"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="module">
+        import React, { useState, useRef, useEffect, useMemo } from 'react';
+        import ReactDOM from 'react-dom/client';
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+        import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer';
+        import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
+        import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass';
+        import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass';
+        import gsap from 'gsap';
+
+        // --- Types & Constants ---
+        const SceneState = {
+            TREE: 'TREE',
+            EXPLODED: 'EXPLODED',
+            TEXT: 'TEXT'
+        };
+
+        const SPHERE_COUNT = 3500;
+        const CUBE_COUNT = 3500;
+        const TOTAL_COUNT = SPHERE_COUNT + CUBE_COUNT;
+        const STAR_COUNT = 2000;
+        const SNOW_COUNT = 1500;
+
+        const GOLD_COLOR = new THREE.Color(0xffd700);
+        const SILVER_COLOR = new THREE.Color(0xf0f0f0);
+        const GREEN_COLOR = new THREE.Color(0x0a3d12);
+
+        const MUSIC_URL = "https://files.catbox.moe/0v9xwt.mp3"; 
+
+        const BLESSINGS = [
+            "May your Christmas sparkle with moments of love, laughter and goodwill.",
+            "Wishing you a season that’s merry and bright!",
+            "May the magic of Christmas fill every corner of your heart and home.",
+            "Sending you warm wishes for a wonderful Christmas and a happy New Year.",
+            "May your holidays be full of warmth, cheer, and luxury.",
+            "May the joy and peace of Christmas be with you today and always.",
+            "Wishing you all the beauty and harmony of the holiday season.",
+            "May your days be merry, your heart be light, and your Christmas be white!"
+        ];
+
+        const VignetteShader = {
+            uniforms: {
+                'tDiffuse': { value: null },
+                'offset': { value: 1.0 },
+                'darkness': { value: 1.2 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+                }
+            `,
+            fragmentShader: `
+                uniform float offset;
+                uniform float darkness;
+                uniform sampler2D tDiffuse;
+                varying vec2 vUv;
+                void main() {
+                    vec4 texel = texture2D( tDiffuse, vUv );
+                    vec2 uv = ( vUv - vec2( 0.5 ) ) * vec2( offset );
+                    gl_FragColor = vec4( texel.rgb * mix( 1.0, 1.0 - darkness, dot( uv, uv ) ), texel.a );
+                }
+            `
+        };
+
+        // --- ChristmasScene Component ---
+        const ChristmasScene = ({ onStateChange, photos }) => {
+            const containerRef = useRef(null);
+            const sceneRef = useRef(null);
+            const cameraRef = useRef(null);
+            const stateRef = useRef(SceneState.TREE);
+            const isTransitioningRef = useRef(false);
+            const photoGroupRef = useRef(new THREE.Group());
+            const focusedPhotoRef = useRef(null);
+            const originalTransformRef = useRef(null);
+            const bloomPassRef = useRef(null);
+
+            useEffect(() => {
+                if (!containerRef.current) return;
+
+                const scene = new THREE.Scene();
+                sceneRef.current = scene;
+                scene.background = new THREE.Color(0x020205);
+                scene.fog = new THREE.FogExp2(0x020205, 0.015);
+
+                const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+                camera.position.set(0, 8, 22);
+                cameraRef.current = camera;
+
+                const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                renderer.toneMappingExposure = 1.0; 
+                containerRef.current.appendChild(renderer.domElement);
+
+                const renderScene = new RenderPass(scene, camera);
+                const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+                bloomPass.threshold = 0.25;
+                bloomPass.strength = 1.2;
+                bloomPass.radius = 0.6;
+                bloomPassRef.current = bloomPass;
+
+                const vignettePass = new ShaderPass(VignetteShader);
+                const composer = new EffectComposer(renderer);
+                composer.addPass(renderScene);
+                composer.addPass(bloomPass);
+                composer.addPass(vignettePass);
+
+                const controls = new OrbitControls(camera, renderer.domElement);
+                controls.enableDamping = true;
+                controls.autoRotate = true;
+                controls.autoRotateSpeed = 0.5;
+                controls.minDistance = 5;
+                controls.maxDistance = 80;
+
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); 
+                scene.add(ambientLight);
+
+                const treeLight = new THREE.PointLight(0xffd700, 10, 60);
+                treeLight.position.set(0, 5, 0);
+                scene.add(treeLight);
+
+                // --- Background Stars ---
+                const starsGeo = new THREE.BufferGeometry();
+                const starPos = new Float32Array(STAR_COUNT * 3);
+                for (let i = 0; i < STAR_COUNT; i++) {
+                    const r = 100 + Math.random() * 100;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    starPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+                    starPos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+                    starPos[i * 3 + 2] = r * Math.cos(phi);
+                }
+                starsGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+                const starsMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.15, transparent: true, opacity: 0.8 });
+                const starField = new THREE.Points(starsGeo, starsMat);
+                scene.add(starField);
+
+                // --- Snowflakes ---
+                const snowGeo = new THREE.BufferGeometry();
+                const snowPositions = new Float32Array(SNOW_COUNT * 3);
+                const snowVelocities = new Float32Array(SNOW_COUNT);
+                const snowDrift = new Float32Array(SNOW_COUNT);
+                for (let i = 0; i < SNOW_COUNT; i++) {
+                    snowPositions[i * 3] = (Math.random() - 0.5) * 60;
+                    snowPositions[i * 3 + 1] = Math.random() * 40 - 10;
+                    snowPositions[i * 3 + 2] = (Math.random() - 0.5) * 60;
+                    snowVelocities[i] = 0.02 + Math.random() * 0.05;
+                    snowDrift[i] = Math.random() * Math.PI * 2;
+                }
+                snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPositions, 3));
+                const snowMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.1, transparent: true, opacity: 0.6 });
+                const snowFall = new THREE.Points(snowGeo, snowMat);
+                scene.add(snowFall);
+
+                const topGeo = new THREE.OctahedronGeometry(0.8, 0);
+                const topMat = new THREE.MeshPhysicalMaterial({
+                    color: 0xffcc00,
+                    emissive: 0xffaa00,
+                    emissiveIntensity: 1.5,
+                    metalness: 0.9,
+                    roughness: 0.1,
+                });
+                const treeTop = new THREE.Mesh(topGeo, topMat);
+                treeTop.position.y = 10.5;
+                scene.add(treeTop);
+
+                const sphereMat = new THREE.MeshPhysicalMaterial({ metalness: 1.0, roughness: 0.2 });
+                const sphereMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.12, 16, 16), sphereMat, SPHERE_COUNT);
+                scene.add(sphereMesh);
+
+                const cubeMat = new THREE.MeshPhysicalMaterial({ metalness: 0.8, roughness: 0.3 });
+                const cubeMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), cubeMat, CUBE_COUNT);
+                scene.add(cubeMesh);
+
+                scene.add(photoGroupRef.current);
+
+                const getTreePosition = (index) => {
+                    const h = 12;
+                    const y = Math.random() * h;
+                    const r = ((h - y) / h) * 5;
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = Math.sqrt(Math.random()) * r;
+                    return new THREE.Vector3(Math.cos(angle) * radius, y - 4, Math.sin(angle) * radius);
+                };
+
+                const getExplodedPosition = () => {
+                    const radius = 25 + Math.random() * 15;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.random() * Math.PI;
+                    return new THREE.Vector3(radius * Math.sin(phi) * Math.cos(theta), radius * Math.sin(phi) * Math.sin(theta), radius * Math.cos(phi));
+                };
+
+                const generateTextPoints = (text) => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) return [];
+                    canvas.width = 1200; canvas.height = 300;
+                    ctx.fillStyle = 'white';
+                    ctx.font = 'bold 120px "Cinzel", serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(text, 600, 150);
+                    const imgData = ctx.getImageData(0, 0, 1200, 300).data;
+                    const pts = [];
+                    for (let y = 0; y < 300; y += 4) {
+                        for (let x = 0; x < 1200; x += 4) {
+                            if (imgData[(y * 1200 + x) * 4] > 128) {
+                                pts.push(new THREE.Vector3((x - 600) * 0.04, -(y - 150) * 0.04 + 4, (Math.random() - 0.5) * 0.5));
+                            }
+                        }
+                    }
+                    return pts;
+                };
+                const textPoints = generateTextPoints("MERRY CHRISTMAS LS");
+
+                const spherePositions = Array.from({ length: SPHERE_COUNT }, (_, i) => getTreePosition(i));
+                const cubePositions = Array.from({ length: CUBE_COUNT }, (_, i) => getTreePosition(i));
+
+                const dummy = new THREE.Object3D();
+                const updateInstances = () => {
+                    for (let i = 0; i < SPHERE_COUNT; i++) {
+                        dummy.position.copy(spherePositions[i]);
+                        dummy.updateMatrix();
+                        sphereMesh.setMatrixAt(i, dummy.matrix);
+                        sphereMesh.setColorAt(i, i % 2 === 0 ? GOLD_COLOR : SILVER_COLOR);
+                    }
+                    for (let i = 0; i < CUBE_COUNT; i++) {
+                        dummy.position.copy(cubePositions[i]);
+                        dummy.updateMatrix();
+                        cubeMesh.setMatrixAt(i, dummy.matrix);
+                        cubeMesh.setColorAt(i, i % 3 === 0 ? GREEN_COLOR : SILVER_COLOR);
+                    }
+                    sphereMesh.instanceMatrix.needsUpdate = true;
+                    if (sphereMesh.instanceColor) sphereMesh.instanceColor.needsUpdate = true;
+                    cubeMesh.instanceMatrix.needsUpdate = true;
+                    if (cubeMesh.instanceColor) cubeMesh.instanceColor.needsUpdate = true;
+                };
+
+                updateInstances();
+
+                const transitionTo = (newState) => {
+                    if (isTransitioningRef.current || focusedPhotoRef.current) return;
+                    isTransitioningRef.current = true;
+                    stateRef.current = newState;
+                    onStateChange(newState);
+
+                    const duration = 2.0;
+                    const ease = "power4.inOut";
+
+                    [...spherePositions, ...cubePositions].forEach((pos, i) => {
+                        let target;
+                        const isSphere = i < SPHERE_COUNT;
+                        const idx = isSphere ? i : i - SPHERE_COUNT;
+
+                        if (newState === SceneState.TREE) {
+                            target = getTreePosition(idx);
+                        } else if (newState === SceneState.EXPLODED) {
+                            target = getExplodedPosition();
+                        } else {
+                            const pt = textPoints[i % textPoints.length];
+                            target = pt ? pt.clone().addScalar((Math.random() - 0.5) * 0.1) : new THREE.Vector3(0,0,0);
+                        }
+
+                        gsap.to(pos, {
+                            x: target.x, y: target.y, z: target.z,
+                            duration: duration + Math.random() * 0.5,
+                            ease: ease,
+                            onComplete: i === TOTAL_COUNT - 1 ? () => { isTransitioningRef.current = false; } : undefined
+                        });
+                    });
+
+                    const isTree = newState === SceneState.TREE;
+                    gsap.to(treeTop.scale, { x: isTree ? 1 : 0, y: isTree ? 1 : 0, z: isTree ? 1 : 0, duration: 1 });
+                    gsap.to(photoGroupRef.current.scale, { x: isTree ? 1 : 0, y: isTree ? 1 : 0, z: isTree ? 1 : 0, duration: 1 });
+                };
+
+                const handleFocusPhoto = (mesh) => {
+                    if (focusedPhotoRef.current || !cameraRef.current) return;
+                    focusedPhotoRef.current = mesh;
+                    originalTransformRef.current = {
+                        pos: mesh.position.clone(),
+                        rot: mesh.rotation.clone(),
+                        parent: mesh.parent
+                    };
+
+                    controls.autoRotate = false;
+                    const camera = cameraRef.current;
+                    const targetPos = new THREE.Vector3(0, 0, -5); 
+                    camera.localToWorld(targetPos);
+
+                    if (bloomPassRef.current) gsap.to(bloomPassRef.current, { strength: 0.1, duration: 0.6 });
+
+                    const mat = mesh.material;
+                    gsap.to(mat, { 
+                        emissiveIntensity: 0.4, 
+                        roughness: 1.0, 
+                        duration: 0.8 
+                    });
+
+                    gsap.to(mesh.position, { x: targetPos.x, y: targetPos.y, z: targetPos.z, duration: 1.2, ease: "power3.inOut" });
+                    gsap.to(mesh.rotation, { x: camera.rotation.x, y: camera.rotation.y, z: camera.rotation.z, duration: 1.2, ease: "power3.inOut" });
+                    gsap.to(mesh.scale, { x: 5, y: 5, z: 5, duration: 1.2, ease: "power3.inOut" });
+                };
+
+                const handleUnfocusPhoto = () => {
+                    if (!focusedPhotoRef.current || !originalTransformRef.current) return;
+                    const mesh = focusedPhotoRef.current;
+                    const { pos, rot } = originalTransformRef.current;
+
+                    if (bloomPassRef.current) gsap.to(bloomPassRef.current, { strength: 1.2, duration: 0.8 });
+                    const mat = mesh.material;
+                    gsap.to(mat, { 
+                        emissiveIntensity: 0.15,
+                        roughness: 0.2, 
+                        duration: 0.8 
+                    });
+
+                    gsap.to(mesh.position, { x: pos.x, y: pos.y, z: pos.z, duration: 1, ease: "power2.inOut" });
+                    gsap.to(mesh.rotation, { x: rot.x, y: rot.y, z: rot.z, duration: 1, ease: "power2.inOut" });
+                    gsap.to(mesh.scale, { x: 1, y: 1, z: 1, duration: 1, ease: "power2.inOut" });
+
+                    focusedPhotoRef.current = null;
+                    originalTransformRef.current = null;
+                    controls.autoRotate = true;
+                };
+
+                const raycaster = new THREE.Raycaster();
+                const mouse = new THREE.Vector2();
+
+                const handleClick = (e) => {
+                    const target = e.target;
+                    if (target.closest('.pointer-events-auto') && target.tagName !== 'CANVAS') {
+                        return;
+                    }
+                    
+                    if (isTransitioningRef.current) return;
+
+                    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+                    raycaster.setFromCamera(mouse, camera);
+
+                    const intersects = raycaster.intersectObjects(photoGroupRef.current.children);
+                    if (intersects.length > 0) {
+                        const mesh = intersects[0].object;
+                        if (focusedPhotoRef.current === mesh) {
+                            handleUnfocusPhoto();
+                        } else {
+                            if (focusedPhotoRef.current) handleUnfocusPhoto();
+                            handleFocusPhoto(mesh);
+                        }
+                        return;
+                    }
+
+                    if (focusedPhotoRef.current) {
+                        handleUnfocusPhoto();
+                        return;
+                    }
+
+                    const states = [SceneState.TREE, SceneState.EXPLODED, SceneState.TEXT];
+                    const nextIdx = (states.indexOf(stateRef.current) + 1) % states.length;
+                    transitionTo(states[nextIdx]);
+                };
+
+                window.addEventListener('click', handleClick);
+
+                const animate = () => {
+                    const delta = 0.016; 
+                    const elapsed = Date.now() * 0.001;
+
+                    starField.rotation.y += delta * 0.02;
+
+                    const snowPosAttr = snowFall.geometry.attributes.position;
+                    for (let i = 0; i < SNOW_COUNT; i++) {
+                        let x = snowPosAttr.getX(i);
+                        let y = snowPosAttr.getY(i);
+                        let z = snowPosAttr.getZ(i);
+
+                        y -= snowVelocities[i];
+                        x += Math.sin(elapsed + snowDrift[i]) * 0.01;
+
+                        if (y < -10) {
+                            y = 30;
+                            x = (Math.random() - 0.5) * 60;
+                            z = (Math.random() - 0.5) * 60;
+                        }
+
+                        snowPosAttr.setXYZ(i, x, y, z);
+                    }
+                    snowPosAttr.needsUpdate = true;
+
+                    treeTop.rotation.y += delta;
+                    treeTop.position.y = 10.5 + Math.sin(elapsed * 2) * 0.15;
+
+                    if (!focusedPhotoRef.current) {
+                        photoGroupRef.current.rotation.y += delta * 0.2;
+                    }
+
+                    updateInstances();
+                    controls.update();
+                    composer.render();
+                    requestAnimationFrame(animate);
+                };
+                animate();
+
+                const handleResize = () => {
+                    const w = window.innerWidth;
+                    const h = window.innerHeight;
+                    camera.aspect = w / h;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(w, h);
+                    composer.setSize(w, h);
+                };
+                window.addEventListener('resize', handleResize);
+
+                return () => {
+                    window.removeEventListener('click', handleClick);
+                    window.removeEventListener('resize', handleResize);
+                    containerRef.current?.removeChild(renderer.domElement);
+                };
+            }, []);
+
+            useEffect(() => {
+                const group = photoGroupRef.current;
+                while (group.children.length) group.remove(group.children[0]);
+
+                const loader = new THREE.TextureLoader();
+                photos.forEach((url, i) => {
+                    loader.load(url, (texture) => {
+                        texture.anisotropy = 16; 
+                        texture.minFilter = THREE.LinearMipmapLinearFilter;
+                        texture.magFilter = THREE.LinearFilter;
+                        texture.colorSpace = THREE.SRGBColorSpace;
+
+                        const geo = new THREE.PlaneGeometry(1.6, 1.6);
+                        const mat = new THREE.MeshPhysicalMaterial({
+                            map: texture,
+                            side: THREE.DoubleSide,
+                            transparent: true,
+                            metalness: 0,
+                            roughness: 0.1,
+                            emissive: new THREE.Color(0xffffff),
+                            emissiveIntensity: 0.15
+                        });
+                        const mesh = new THREE.Mesh(geo, mat);
+
+                        const t = i / Math.max(photos.length - 1, 1);
+                        const angle = t * Math.PI * 8;
+                        const radius = 6.5 - t * 4.5;
+                        const y = t * 10 - 3.5;
+
+                        mesh.position.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
+                        mesh.lookAt(0, y, 0);
+                        group.add(mesh);
+                    });
+                });
+            }, [photos]);
+
+            return React.createElement('div', { ref: containerRef, className: "w-full h-full" });
+        };
+
+        // --- Main App Component ---
+        const App = () => {
+            const [interactionHint, setInteractionHint] = useState("Tap to disperse the tree");
+            const [photos, setPhotos] = useState([]);
+            const [currentBlessing, setCurrentBlessing] = useState(null);
+            const [isMuted, setIsMuted] = useState(false);
+            const [hasStartedMusic, setHasStartedMusic] = useState(false);
+            
+            const fileInputRef = useRef(null);
+            const audioRef = useRef(null);
+
+            useEffect(() => {
+                const audio = new Audio(MUSIC_URL);
+                audio.loop = true;
+                audio.volume = 0.6;
+                audio.preload = "auto";
+                audioRef.current = audio;
+
+                const startMusic = () => {
+                    if (audioRef.current && !hasStartedMusic) {
+                        audioRef.current.play().then(() => {
+                            setHasStartedMusic(true);
+                            window.removeEventListener('click', startMusic);
+                            window.removeEventListener('touchstart', startMusic);
+                        }).catch(err => {
+                            console.log("Autoplay check:", err);
+                        });
+                    }
+                };
+
+                window.addEventListener('click', startMusic);
+                window.addEventListener('touchstart', startMusic);
+
+                return () => {
+                    window.removeEventListener('click', startMusic);
+                    window.removeEventListener('touchstart', startMusic);
+                    if (audioRef.current) {
+                        audioRef.current.pause();
+                        audioRef.current = null;
+                    }
+                };
+            }, [hasStartedMusic]);
+
+            useEffect(() => {
+                if (audioRef.current) {
+                    audioRef.current.muted = isMuted;
+                }
+            }, [isMuted]);
+
+            const handleStateChange = (state) => {
+                switch(state) {
+                    case SceneState.TREE: setInteractionHint("Tap to disperse the tree"); break;
+                    case SceneState.EXPLODED: setInteractionHint("Tap to reveal the greeting"); break;
+                    case SceneState.TEXT: setInteractionHint("Tap to restore the tree"); break;
+                }
+            };
+
+            const handleFileUpload = (e) => {
+                const files = e.target.files;
+                if (!files) return;
+
+                const newPhotos = [];
+                const count = Math.min(files.length, 10);
+                
+                for (let i = 0; i < count; i++) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        if (event.target?.result) {
+                            newPhotos.push(event.target.result);
+                            if (newPhotos.length === count) setPhotos(newPhotos);
+                        }
+                    };
+                    reader.readAsDataURL(files[i]);
+                }
+            };
+
+            const showRandomBlessing = (e) => {
+                e.stopPropagation();
+                const randomIdx = Math.floor(Math.random() * BLESSINGS.length);
+                setCurrentBlessing(BLESSINGS[randomIdx]);
+            };
+
+            const toggleMute = (e) => {
+                e.stopPropagation();
+                setIsMuted(!isMuted);
+            };
+
+            return React.createElement('div', { className: "relative w-full h-screen" },
+                React.createElement('div', { className: "absolute top-16 left-0 w-full flex flex-col items-center pointer-events-none z-20" },
+                    React.createElement('div', { className: "flex flex-col items-center scale-75 md:scale-100" },
+                        React.createElement('h1', { 
+                            className: "luxury-text text-4xl md:text-5xl lg:text-6xl font-black mb-2",
+                            'data-text': "MERRY CHRISTMAS LS"
+                        }, "MERRY CHRISTMAS LS"),
+                        React.createElement('div', { className: "h-[1px] w-32 md:w-64 bg-gradient-to-r from-transparent via-[#ffcc33] to-transparent opacity-40 mb-4" }),
+                        React.createElement('p', { className: "hint-text text-sm md:text-base italic text-white/80 animate-pulse" }, interactionHint)
+                    )
+                ),
+                React.createElement('div', { className: "absolute top-6 right-6 z-40 pointer-events-auto" },
+                    React.createElement('button', { 
+                        onClick: toggleMute,
+                        className: `w-12 h-12 rounded-full flex items-center justify-center transition-all duration-500 backdrop-blur-md border ${isMuted ? 'bg-white/10 text-white/40 border-white/20' : 'bg-[#ffcc33]/20 text-[#ffcc33] border-[#ffcc33]/40 shadow-[0_0_20px_rgba(255,204,51,0.2)]'}`
+                    }, isMuted ? 
+                        React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }, 
+                            React.createElement('path', { d: "M11 5L6 9H2v6h4l5 4V5z" }),
+                            React.createElement('line', { x1: "23", y1: "9", x2: "17", y2: "15" }),
+                            React.createElement('line', { x1: "17", y1: "9", x2: "23", y2: "15" })
+                        ) : 
+                        React.createElement('div', { className: "relative flex items-center justify-center" },
+                            React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", className: "animate-[spin_4s_linear_infinite]" }, 
+                                React.createElement('circle', { cx: "12", cy: "12", r: "10" }),
+                                React.createElement('path', { d: "M12 8v4l2 2" })
+                            ),
+                            React.createElement('div', { className: "absolute -top-1 -right-1 w-2 h-2 bg-red-400 rounded-full animate-ping" })
+                        )
+                    )
+                ),
+                React.createElement('div', { className: "absolute bottom-10 left-0 w-full flex flex-col items-center space-y-4 px-6 z-30" },
+                    React.createElement('div', { className: "flex flex-wrap justify-center gap-4" },
+                        React.createElement('button', { 
+                            onClick: (e) => { e.stopPropagation(); fileInputRef.current?.click(); },
+                            className: "pink-button px-6 py-3 rounded-full text-xs md:text-sm shadow-lg pointer-events-auto"
+                        }, "UPLOAD MEMORIES (MAX 10)"),
+                        React.createElement('button', { 
+                            onClick: showRandomBlessing,
+                            className: "pink-button px-6 py-3 rounded-full text-xs md:text-sm shadow-lg pointer-events-auto"
+                        }, "RECEIVE BLESSING"),
+                        React.createElement('input', { 
+                            type: "file", 
+                            ref: fileInputRef, 
+                            className: "hidden", 
+                            accept: "image/*", 
+                            multiple: true, 
+                            onChange: handleFileUpload 
+                        })
+                    ),
+                    React.createElement('p', { className: "text-[10px] text-white/20 uppercase tracking-[0.4em] font-['Cinzel'] pointer-events-none" }, "Drag to explore • Scroll to zoom")
+                ),
+                currentBlessing && React.createElement('div', { 
+                    className: "absolute inset-0 z-50 flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm pointer-events-auto",
+                    onClick: (e) => e.stopPropagation()
+                },
+                    React.createElement('div', { className: "blessing-card max-w-sm w-full p-8 text-center relative" },
+                        React.createElement('button', { 
+                            onClick: (e) => { e.stopPropagation(); setCurrentBlessing(null); },
+                            className: "absolute top-4 right-6 text-black/50 hover:text-black text-xl font-bold"
+                        }, "×"),
+                        React.createElement('h3', { className: "font-['Cinzel'] font-bold text-lg mb-4 tracking-wider" }, "CHRISTMAS WISH"),
+                        React.createElement('p', { className: "font-['Playfair Display'] italic text-lg leading-relaxed" }, `"${currentBlessing}"`),
+                        React.createElement('div', { className: "mt-8" },
+                            React.createElement('button', { 
+                                onClick: (e) => { e.stopPropagation(); setCurrentBlessing(null); },
+                                className: "bg-black text-[#ffd1dc] px-8 py-2 rounded-full font-bold text-sm tracking-widest hover:bg-black/80 transition-colors"
+                            }, "CLOSE")
+                        )
+                    )
+                ),
+                React.createElement('div', { className: "absolute inset-0 border-[20px] border-[#ffcc33]/5 pointer-events-none z-10" }),
+                React.createElement(ChristmasScene, { onStateChange: handleStateChange, photos: photos })
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(App));
+    </script>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
